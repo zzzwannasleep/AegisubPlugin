@@ -243,6 +243,10 @@ def test_locate(tmp):
 
 
 def main():
+    if "--all" in sys.argv:
+        # 一个命令跑完：本文件 + tests\ 下的专项测试（用哪个 Python 跑，见 tools\testconfig.py）
+        import subprocess
+        return subprocess.run([sys.executable, os.path.join(ROOT, "tests", "run_all.py")]).returncode
     print("轴效插件自检（不开 Aegisub）")
     try:
         test_source_parity()

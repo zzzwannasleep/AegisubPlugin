@@ -21,3 +21,6 @@ catalog/
 __pycache__/
 *.pyc
 *.tmp
+
+# 测试生成的素材（每次跑测试自己造，别提交）
+tests/fixtures/generated/
