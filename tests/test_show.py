@@ -8,7 +8,8 @@ r"""样式方案：Python 写的 .sty 能被 Lua 读、编号专用优先、按�
 
 lupa 的 LuaJIT 自带的 io 库打不开含中文的路径，所以按老测试的办法把 Lua 的 io.open 换成
 「用 Python 开文件」的 shim，并用 package.preload.lfs 提供目录列举 —— 插件那边完全不知情，
-其余照原样跑。样式库一律用临时目录，真的 D:\Video\Aegisub-3.4.2\catalog 一个字节都不动（结尾有守卫断言）。
+其余照原样跑。样式库一律用临时目录，真的 catalog 目录（在 Aegisub 目录下）一个字节都不动
+（结尾有守卫断言）。
 
     python tests\test_show.py
 """

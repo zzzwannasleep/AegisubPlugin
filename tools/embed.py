@@ -17,8 +17,9 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 SRC = os.path.join(ROOT, "src")
-LUA = r"D:\Video\Aegisub-3.4.2\automation\autoload\zhouxiao.lua"
-HOME = r"D:\Video\Aegisub-3.4.2\zhouxiao-autotime"
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import testconfig as C   # 路径只在这里定义一次；Aegisub 目录不存在时它会报一句人话
 
 BLOCKS = [
     ("AUTOTIME_PY", "autotime.py", True),
@@ -58,7 +59,7 @@ def main():
     deploy = "--deploy" in sys.argv
     version = sys.argv[sys.argv.index("--version") + 1] if "--version" in sys.argv else None
 
-    original = read(LUA)
+    original = read(C.lua_path())
     text = original
 
     for var, name, bom in BLOCKS:
@@ -100,13 +101,13 @@ def main():
     if text == original and not deploy:
         print("lua 没变化，不用写")
     else:
-        write(LUA, text)
-        print("写入 %s（%d 字符）" % (LUA, len(text)))
+        write(C.lua_path(), text)
+        print("写入 %s（%d 字符）" % (C.lua_path(), len(text)))
 
     if deploy:
         for _, name, _ in BLOCKS:
             if name.endswith(".py"):
-                shutil.copyfile(os.path.join(SRC, name), os.path.join(HOME, name))
+                shutil.copyfile(os.path.join(SRC, name), os.path.join(C.component_dir(), name))
                 print("  同步组件目录 %s" % name)
     return 0
 

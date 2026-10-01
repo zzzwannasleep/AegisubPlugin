@@ -1,10 +1,14 @@
-"""测试用的路径和模块加载。所有测试脚本都从这里拿路径，别再写死盘符。
+"""插件在哪、组件在哪、用哪个 Python 跑测试——全仓库只有这里定义这些路径。
 
-环境变量（可选，都有默认值）：
-    ZX_COMPONENT   组件目录（默认 D:\\Video\\Aegisub-3.4.2\\zhouxiao-autotime）
-    ZX_PY          用哪个 Python 跑子进程（默认组件目录里的 env\\Scripts\\python.exe）
-    ZX_VIDEO       测试视频（GUI 截图测试要；默认真实番剧那集）
-    ZX_AEGISUB     Aegisub 目录（默认从组件目录推出来）
+**不写死盘符。** 顺序是：环境变量 → 在仓库附近自动找（同级目录、上级目录）→ 报错说清楚
+该设哪个环境变量。clone 到别的机器上只要 Aegisub 目录在仓库旁边，什么都不用设。
+
+环境变量：
+    ZX_AEGISUB     Aegisub 目录（里面要有 automation\\autoload\\ 和 csri\\）
+    ZX_COMPONENT   组件目录（默认 <Aegisub>\\zhouxiao-autotime）
+    ZX_PY          跑子进程用的 Python（默认 <组件>\\env\\Scripts\\python.exe）
+    ZX_VIDEO       要用真实视频跑 GUI 测试时指过去（默认不用，测试自己合成视频）
+    ZX_KARA_TEMPLATE  换一份卡拉OK模板跑 roundtrip
 """
 import contextlib
 import importlib
@@ -17,17 +21,59 @@ SRC = os.path.join(ROOT, "src")
 TESTS = os.path.join(ROOT, "tests")
 FIXTURES = os.path.join(TESTS, "fixtures")
 GEN = os.path.join(FIXTURES, "generated")
+COMPONENT_NAME = "zhouxiao-autotime"     # 插件自己起的组件目录名，和 Lua 里 zx_home() 一致
 
-COMPONENT = os.environ.get("ZX_COMPONENT", r"D:\Video\Aegisub-3.4.2\zhouxiao-autotime")
-AEGISUB = os.environ.get("ZX_AEGISUB", os.path.dirname(COMPONENT.rstrip("\\/")))
-PY = os.environ.get("ZX_PY", os.path.join(COMPONENT, "env", "Scripts", "python.exe"))
-LUA = os.path.join(AEGISUB, "automation", "autoload", "zhouxiao.lua")
-VSFILTER = os.path.join(AEGISUB, "csri", "VSFilter.dll")
 
-VIDEO = os.environ.get("ZX_VIDEO", os.path.join(
-    r"D:\Video\TestVideo",
-    r"[NEST] Mushoku Tensei Jobless Reincarnation S03 - 08 [CR WEB-DL 1080p AVC AAC][JPSC_JPTC]",
-    r"[NEST] Mushoku Tensei Jobless Reincarnation S03 - 08 [CR WEB-DL 1080p AVC AAC][JPSC_JPTC].mkv"))
+def _looks_like_aegisub(path):
+    return bool(path) and os.path.isdir(os.path.join(path, "automation", "autoload"))
+
+
+def _find_aegisub():
+    """在仓库附近找 Aegisub：先同级，再往上两层。只认同级目录名里带 aegisub 的，
+    免得把别的仓库认进来。"""
+    for base in (os.path.dirname(ROOT), os.path.dirname(os.path.dirname(ROOT))):
+        if not os.path.isdir(base):
+            continue
+        for name in sorted(os.listdir(base)):
+            p = os.path.join(base, name)
+            if "aegisub" in name.lower() and _looks_like_aegisub(p):
+                return p
+    return None
+
+
+def aegisub_dir():
+    p = os.environ.get("ZX_AEGISUB")
+    if p:
+        return p
+    p = _find_aegisub()
+    if p:
+        return p
+    raise SystemExit(
+        "找不到 Aegisub 目录。设环境变量 ZX_AEGISUB 指过去，例如：\n"
+        "    set ZX_AEGISUB=D:\\你的\\Aegisub\n"
+        "或者把这个仓库放在 Aegisub 目录旁边（同级）。\n"
+        "目录里应该有 automation\\autoload\\ 和 csri\\。")
+
+
+def component_dir():
+    return os.environ.get("ZX_COMPONENT") or os.path.join(aegisub_dir(), COMPONENT_NAME)
+
+
+PY = os.environ.get("ZX_PY")            # None = 按组件目录推
+VIDEO = os.environ.get("ZX_VIDEO")      # None = 测试自己合成视频
+
+
+def python_exe():
+    return PY or os.path.join(component_dir(), "env", "Scripts", "python.exe")
+
+
+def lua_path():
+    return os.path.join(aegisub_dir(), "automation", "autoload", "zhouxiao.lua")
+
+
+def vsfilter_path():
+    return os.path.join(aegisub_dir(), "csri", "VSFilter.dll")
+
 
 # 插件里的菜单名，测试里按名字取宏
 MACRO = {
@@ -67,11 +113,12 @@ def gen(name):
     return os.path.join(GEN, name)
 
 
-def load_src(home=COMPONENT):
+def load_src(home=None):
     """从 src\\ 导入 zxcore / fxedit / zxai，并把 HOME 指到组件目录。
 
     直接 import 的话 HOME 会是 src\\，那些「运行时要读的文件」（fx_presets.json、
     ai_history.json、kara_pack）就找不到；组件目录才是跑起来时的 HOME。
+    home=None 时用组件目录；测试里也可以传一个临时目录来隔离。
     """
     if SRC not in sys.path:
         sys.path.insert(0, SRC)
@@ -80,6 +127,11 @@ def load_src(home=COMPONENT):
     zxcore = importlib.import_module("zxcore")
     fxedit = importlib.import_module("fxedit")
     zxai = importlib.import_module("zxai")
+    if home is None:
+        try:
+            home = component_dir()
+        except SystemExit:
+            home = None      # 没装 Aegisub 也允许只用纯 Python 的部分
     if home:
         zxcore.HOME = home
         fxedit.HOME = home
@@ -89,7 +141,7 @@ def load_src(home=COMPONENT):
 
 
 def lua_source():
-    return read(need(LUA, "线上 zhouxiao.lua"))
+    return read(need(lua_path(), "线上 zhouxiao.lua"))
 
 
 def load_lua(src=None, spawn=None, hook_before="-- 日志最后一行"):
@@ -117,3 +169,17 @@ def temp_home():
     import tempfile
     d = tempfile.mkdtemp(prefix="zx_test_")
     yield d
+
+
+def __getattr__(name):
+    """老的写法 `C.AEGISUB` / `C.LUA` / `C.COMPONENT` / `C.VSFILTER` 还能用，
+    但改成用到时才解析——解析不到会报一句人话，而不是在 import 阶段直接炸。"""
+    if name == "AEGISUB":
+        return aegisub_dir()
+    if name == "COMPONENT":
+        return component_dir()
+    if name == "LUA":
+        return lua_path()
+    if name == "VSFILTER":
+        return vsfilter_path()
+    raise AttributeError(name)

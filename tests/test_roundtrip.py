@@ -6,8 +6,8 @@ r"""不开 Aegisub，跑通 0.24 的三页工作台链路：Lua 导出 → Pytho
 这里把 spawn 换成假的：Python 那一半直接调 src 里的 fxedit / zxcore 算出 ops，
 于是不用开 Aegisub、不弹窗，也能验「一次点击 = 一次撤销点」和 apply_ops 的每条语义。
 
-素材全是合成的（tests\fixtures.py），不绑某一部番；真实的社区卡拉OK模板可以这样指：
-    set ZX_KARA_TEMPLATE=D:\path\to\t1.ass
+素材全是合成的（tests\fixtures.py），不绑某一部番；想换成别的卡拉OK模板：
+    set ZX_KARA_TEMPLATE=<模板文件路径>
 
     python tests\test_roundtrip.py
 """

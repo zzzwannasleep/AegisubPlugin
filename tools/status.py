@@ -16,7 +16,6 @@ sys.stdout.reconfigure(encoding="utf-8")
 import embed as embedtool          # noqa: E402
 
 SRC = os.path.join(ROOT, "src")
-HOME = embedtool.HOME
 
 
 def h12(text):
@@ -24,7 +23,9 @@ def h12(text):
 
 
 def main():
-    lua_raw = embedtool.read(embedtool.LUA) if os.path.exists(embedtool.LUA) else None
+    lua = embedtool.C.lua_path()
+    home = embedtool.C.component_dir()
+    lua_raw = embedtool.read(lua) if os.path.exists(lua) else None
     print("源码仓库  %s" % ROOT)
     print("版本      %s" % embedtool.read(os.path.join(SRC, "VERSION")).strip())
     print()
@@ -45,15 +46,15 @@ def main():
     print()
     if lua_raw is not None:
         v = re.search(r'script_version = "([\d.]+)"', lua_raw).group(1)
-        st = os.stat(embedtool.LUA)
-        print("线上 lua  %s" % embedtool.LUA)
+        st = os.stat(lua)
+        print("线上 lua  %s" % lua)
         print("          %d 字符，版本 %s，改于 %s" % (len(lua_raw), v, _time(st.st_mtime)))
     print()
-    print("组件目录  %s" % HOME)
+    print("组件目录  %s" % home)
     drift = []
     for name in ("autotime.py", "fxedit.py", "zxcore.py", "zxai.py", "install.ps1"):
         src = embedtool.read(os.path.join(SRC, name))
-        p = os.path.join(HOME, name)
+        p = os.path.join(home, name)
         if not os.path.exists(p):
             print("  %-22s %10s" % (name, "缺"))
             continue
@@ -63,7 +64,7 @@ def main():
             drift.append(name)
         print("  %-22s %10d  %s  %s" % (name, os.path.getsize(p), _time(os.path.getmtime(p)), mark))
     for name in ("ok.txt", "lite2.txt", "models/base.pt", r"env\Scripts\python.exe", "kara_pack"):
-        p = os.path.join(HOME, name)
+        p = os.path.join(home, name)
         if os.path.exists(p):
             print("  %-22s %10s  %s" % (name, "目录" if os.path.isdir(p) else os.path.getsize(p),
                                         _time(os.path.getmtime(p))))

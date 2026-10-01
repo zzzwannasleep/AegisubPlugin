@@ -12,7 +12,10 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-DEFAULT_LUA = r"D:\Video\Aegisub-3.4.2\automation\autoload\zhouxiao.lua"
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import testconfig as C   # noqa: E402  （路径只在 testconfig 里定义）
+DEFAULT_LUA = None       # 用 C.lua_path()
 
 # (内嵌变量名, 仓库里的文件名, 部署时 Lua 是不是会给它加 BOM)
 # BOM 是 Lua 写文件时加的（install.ps1 / autotime.py 不带 BOM，PowerShell 5 会把中文读成乱码），
@@ -46,7 +49,7 @@ def slice_block(text, var):
 
 
 def main():
-    lua = arg("--from", DEFAULT_LUA)
+    lua = arg("--from", None) or C.lua_path()
     out = arg("--out", os.path.join(ROOT, "src"))
     text = open(lua, encoding="utf-8").read()
     os.makedirs(out, exist_ok=True)

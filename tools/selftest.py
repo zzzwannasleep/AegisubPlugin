@@ -25,11 +25,14 @@ sys.stdout.reconfigure(encoding="utf-8")
 
 import embed as embedtool          # noqa: E402
 import luaharness                  # noqa: E402
+import testconfig as C             # noqa: E402
 
-LUA = embedtool.LUA
 SRC = os.path.join(ROOT, "src")
-HOME = r"D:\Video\Aegisub-3.4.2\zhouxiao-autotime"
-PY = os.path.join(HOME, "env", "Scripts", "python.exe")
+LUA = None                         # 用 C.lua_path()：Aegisub 目录由 testconfig 解析
+
+
+def lua_path():
+    return C.lua_path()
 
 FAILED = []
 PASSED = []
@@ -106,10 +109,11 @@ def _lua_syntax_ok(src):
 
 def test_env():
     section("3. 组件环境")
-    if not os.path.exists(PY):
-        check("组件 Python 环境", False, "没装（%s）" % PY)
+    py, home = C.python_exe(), C.component_dir()
+    if not os.path.exists(py):
+        check("组件 Python 环境", False, "没装（%s）" % py)
         return
-    r = subprocess.run([PY, os.path.join(HOME, "autotime.py"), "--check"],
+    r = subprocess.run([py, os.path.join(home, "autotime.py"), "--check"],
                        capture_output=True, text=True, encoding="utf-8", errors="replace")
     ok = r.returncode == 0 and "自检通过" in (r.stdout or "")
     check("autotime.py --check", ok, (r.stdout or "") + (r.stderr or ""))

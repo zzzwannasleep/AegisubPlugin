@@ -20,7 +20,7 @@ SKIP = {"test_gui.py", "run_all.py"}
 
 def main():
     args = [a for a in sys.argv[1:]]
-    py = C.PY
+    py = C.python_exe()
     if "--py" in args:
         i = args.index("--py")
         py = args[i + 1]

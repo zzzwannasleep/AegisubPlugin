@@ -2,21 +2,32 @@
 
 这里只搭台子（mock + subs 表），用例在 tools/selftest.py 里。
 真正跑之前要注意两件事：
-  1. Lua 5.5 打不开含中文的路径，所以测试用的文件都放在纯英文的临时目录里；
-  2. 插件里 aegisub.decode_path("?user") 指向哪，它就往哪写 Python 源码，所以指到临时目录，别指到真的组件目录。
+  1. lupa 用的是标准 io 库，打不开含中文的路径，所以测试用的文件都放在纯英文的临时目录里；
+  2. 插件里 aegisub.decode_path("?user") 指向哪，它就往哪写 Python 源码，
+     所以要指到临时目录，别指到真的组件目录。
 """
 import os
 import sys
 
-import lupa.luajit21 as L
+HERE = os.path.dirname(os.path.abspath(__file__))
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import testconfig as C   # noqa: E402  （路径只在 testconfig 里定义）
 
-LUA = r"D:\Video\Aegisub-3.4.2\automation\autoload\zhouxiao.lua"
+import lupa.luajit21 as L  # noqa: E402
+
+LUA = None   # 用 lua_path()：别在 import 阶段就要求 Aegisub 目录存在
+
+
+def lua_path():
+    return C.lua_path()
 
 
 class Harness:
     """加载 zhouxiao.lua，并暴露：macros / rows / styles_by_name / logs / 各种可控开关"""
 
-    def __init__(self, lua_path=LUA, home=None, video="", frames=None, dialog=None):
+    def __init__(self, lua_path=None, home=None, video="", frames=None, dialog=None):
+        lua_path = lua_path or C.lua_path()
         self.home = home or os.path.join(os.environ.get("TEMP", "."), "zx_selftest_home")
         os.makedirs(self.home, exist_ok=True)
         self.lua = L.LuaRuntime(unpack_returned_tuples=True)
@@ -66,7 +77,7 @@ class Harness:
         g.macros = lua.table()
         g.aegisub = lua.table_from({
             "register_macro": lambda name, desc, fn: g.macros.__setitem__(name, fn),
-            "decode_path": lambda p: (self.home + "\\" if p == "?user" else r"D:\Video\Aegisub-3.4.2"),
+            "decode_path": lambda p: (self.home + "\\" if p == "?user" else C.aegisub_dir()),
             "log": log,
             "cancel": cancel,
             "dialog": lua.table_from({"display": display, "open": open_dialog}),
