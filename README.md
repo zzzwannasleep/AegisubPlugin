@@ -1,98 +1,122 @@
-# 轴效（Aegisub 插件）
+# 轴效
 
-字幕组「轴效」岗位用的 Aegisub 自动化插件：导入中日 txt、打轴、主次/歌词/注释/屏字、
-自动粗轴、特效工作台（特效样式 / 卡拉OK / AI 助手）。
+给字幕组「轴效」（打轴 + 特效字幕）用的 Aegisub 自动化插件。
 
-**作者：zzzwannasleep** ｜ **当前版本 0.24**，跑在 arch1t3cht 增强版 Aegisub（`D:\Video\Aegisub-3.4.2`）。
+把一份翻译交来的日文 txt / 中文 txt，一路做到能交片的双语字幕：导入 → 打轴 → 分主次 →
+加注释和屏字 → OP/ED 歌词特效，中间那些重复劳动和要对着画面调的部分，插件替你干。
 
-## 目录里有什么
+**作者：zzzwannasleep** ｜ 版本 0.24 ｜ 授权：LGPL-3.0-or-later（附署名条款，见下）
 
-```
-src\zhouxiao.lua     插件本体（Aegisub 加载的就是它）
-src\autotime.py      自动粗轴：人声分离 + whisper 强制对齐
-src\fxedit.py        特效工作台的窗口（tkinter）
-src\zxcore.py        工作台的公共部分：ASS 读写、预览、K 帧时间轴
-src\zxai.py          AI 助手的两种协议（OpenAI 兼容 / Anthropic）
-src\install.ps1      组件安装脚本（独立 Python 环境 + 两个模型）
-src\VERSION          版本号，和 zhouxiao.lua 里的 script_version 一起改
-tools\extract.py     从 lua 里抽出上面几段（一般只在接管时用一次）
-tools\embed.py       把 src 塞回 lua（改完必须跑）+ --check / --version / --deploy
-tools\status.py      看 src、线上 lua、组件目录对不对得上
-tools\selftest.py    回归测试（不开 Aegisub 也能跑）
-tools\luaharness.py  selftest 用的 Aegisub API 模拟台
-tools\testconfig.py  测试用的路径和模块加载（别在测试里写死盘符）
-tests\               各个专项测试，见下面「测试」
-```
+---
 
-## 改代码的流程
+## 它能干什么
 
-Python 那四段**不是独立文件**，它们以长字符串的形式内嵌在 `zhouxiao.lua` 里（变量名
-`AUTOTIME_PY` / `FXEDIT_PY` / `ZXCORE_PY` / `ZXAI_PY` / `INSTALL_PS1`），Aegisub 每次跑宏时
-写到组件目录去。所以：
+插件装在 Aegisub 里之后，顶部「自动化」菜单下会多出一个「轴效」子菜单：
 
-1. 改 `src\` 里的文件（**别改组件目录里的同名文件**，它们会被覆盖）
-2. `python tools/embed.py` 塞回 `src\zhouxiao.lua` → 同时写进线上 `automation\autoload\zhouxiao.lua`
-3. `python tools/status.py` 确认三边一致
-4. 回到 Aegisub：**自动化 → 重新扫描自动化目录**（或重启 Aegisub）
-5. `python tools/embed.py --deploy` 可以把组件目录的 Python 也一并同步（可选；正常用
-   Aegisub 跑一次宏也会自动写）
-
-改版本号：`python tools/embed.py --version 0.25` —— lua 里的 `script_version` 和
-`src\VERSION` 会一起改。
-
-## 测试
-
-不用 Aegisub 的部分，一条命令跑完（一个测试一个子进程）：
-
-```bat
-D:\Video\Aegisub-3.4.2\zhouxiao-autotime\env\Scripts\python.exe tools\selftest.py --all
-```
-
-必须用组件目录里那个 Python（`zhouxiao-autotime\env\Scripts\python.exe`）——测试要 lupa、
-av、torch 这些包，它们只装在组件环境里。单独跑某一个测试：
-`python tools\selftest.py`（插件本身那 32 项）、`python tests\run_all.py kara`（只跑名字带 kara 的）。
-
-| 测试 | 管什么 |
+| 菜单 | 做什么 |
 |---|---|
-| `tools\selftest.py` | 源码三边一致、四段 Python 语法、组件环境自检（DirectML + 两个模型）、导入中日 txt、主次成对切换、同步时间（含句数对不上时中止）、加注释/加屏字、歌词定位 |
-| `tests\test_kara_parity.py` | 卡拉OK 切法不变量：`\k` 读法 ↔ `auto_k` 写回往返一致（拆开/合并/空音节） |
-| `tests\test_roundtrip.py` | 工作台整条链路：Lua 导出 → Python 算改动 → 写 ops → Lua 应用（特效样式/卡拉OK/AI 三页） |
-| `tests\test_show.py` | 样式库、编号专用（`ED CN #05`）、按视频文件名认方案、弹框次数 |
-| `tests\test_ai.py` | AI 助手双协议（OpenAI 兼容 / Anthropic），本机假接口，含流式、工具调用、图片回填 |
+| **1 导入 txt** | 选一个 txt 导进来，自动认出是中文还是日文，中日各导一次、各自成行（不会合成一行）。同一个文件导两次会拒绝 |
+| **1 导入 txt + 自动粗轴** | 导入原文的同时听音频自动出个大概时间。第一次用会问要不要下载组件（约 600MB，独立环境 + 两个模型，需要独立显卡） |
+| **2 设为主要 / 次要 / OP / ED / 插曲** | 换样式。中日是成对的，只选一边、另一边自动跟着换 |
+| **3 加注释** | 选中行下面插一条「注：」，时间照抄，改字就行 |
+| **4 加屏字** | 从视频当前帧插一条屏字，默认放画面正中，你再拖或写坐标 |
+| **5 同步时间（中日）** | 打好一边的轴，时间按顺序复制给另一边。句数对不上会停下来让你先查 |
+| **6 歌词定位** | 铺辅助线 + 放中日两条示例行，你在画面上拖到位，插件把对齐方式和边距吸进去写进样式 |
+| **7 特效样式** | 打开特效工作台：给屏字/歌词套淡入淡出、发光、双层描边、入场动画……带声音实时预览 |
+| **8 卡拉OK特效** | 给歌词自动打 `\k`，套社区模板或自己写的模板，用逐字关键帧时间轴手动打点，预览后应用 |
+| **9 AI 助手** | 接你自己的 OpenAI 兼容 / Anthropic 接口，让 AI 直接读改这份字幕、写特效，预览后应用 |
 
-要真窗口的两个：
+**样式方案**：每部番的字体、颜色、描边都不一样。插件用 Aegisub 样式管理器自己的「样式库」
+（`catalog\名字.sty`）存一套方案，旁边配一份特效配方（`名字.fx.json`）。下一集打开时按视频
+文件名自动认出是哪个方案。每集 ED 不同的番（比如艾莉同学）可以给样式加「编号专用」版本
+（`ED CN #05`），编号对上时优先用。
 
-```bat
-D:\Video\Aegisub-3.4.2\zhouxiao-autotime\env\Scripts\python.exe tests\test_gui.py kara
+## 装法
+
+1. 先把 Aegisub 装好。插件是在 [arch1t3cht 增强版 Aegisub](https://github.com/arch1t3cht/Aegisub/releases) 上做的。
+2. 把 `src\zhouxiao.lua` 放到 Aegisub 的 `automation\autoload\` 目录里。
+   便携版就是 `你的Aegisub目录\automation\autoload\`。
+3. 打开 Aegisub → 顶部「自动化」菜单 → **重新扫描自动化目录**（英文界面叫 Rescan Autoload Dir）。
+   菜单里就会多出「轴效」。
+4. 「1 导入 txt + 自动粗轴」和「7/8/9 工作台」第一次用会弹窗问要不要下载组件。
+   点「下载安装」会开一个窗口显示进度，装完按回车关掉它再回来。
+
+组件（独立 Python 环境 + 两个模型 + 卡拉OK模板）装在 Aegisub 的
+`zhouxiao-autotime\` 里，**不碰你系统里已有的 Python**。不想要了直接删这个文件夹。
+
+## 日常怎么用
+
+一次成片的大致顺序：
+
+1. 打开视频，**先打好轴的那一边**（一般是日文）用「1 导入 txt」导进来。
+2. 打完轴，用「5 同步时间」把时间给中文。然后「2」分主次、标歌词类。
+3. 需要解释的地方用「3 加注释」；画面上有字的地方，把播放头停到那一帧，用「4 加屏字」。
+4. OP/ED 想加特效：「6 歌词定位」把中日歌词的位置定下来 →「7 特效样式」套特效 →
+   「8 卡拉OK特效」做逐字卡拉OK。
+5. 每一步都可以 Ctrl+Z 撤销，**一次点击算一步撤销**（不会只撤掉半截）。
+6. 屏幕上看到的效果和成片可能有细微差别：预览用的是 Aegisub 自带的 xy-VSFilter，
+   增强版 Aegisub 自己的视频用 libass，个别标签的表现不一样。
+
+## 每个功能怎么用
+
+细节说明和测试步骤在 `docs\使用说明.md`（含每一步预期看到什么、出问题怎么描述）。
+每个功能的字段含义直接在界面里看，插件界面上的文字都是准确说法，不加括号解释。
+
+## 出问题了
+
+**菜单里没有「轴效」**
+先看「自动化」菜单里有没有「重新扫描自动化目录」，点一下或重启 Aegisub。
+脚本要放在 `automation\autoload\` 下，不是 `automation\`。
+
+**弹出一个黑窗口闪一下就没了**
+0.20 起插件已经不再经过 cmd 启动外部程序了。如果你看到黑窗口，说明脚本是旧版，
+换成仓库里这份。
+
+**导入时中文变成乱码**
+txt 要存成 UTF-8。GBK 的 txt 现在读进来会乱码。
+
+**同步时间说句数对不上**
+常见原因：同一个 txt 导了两次（删掉多出来的那份）、翻译漏了一句或多了几句（补齐）。
+插件不会硬同步，因为按顺序配对会整体错位。
+
+**自动粗轴提示没显卡 / 跑不动**
+人声分离需要一块独立显卡（N 卡 / A 卡 / Intel Arc 都行）。核显跑不动是预期内的。
+
+**报告问题**
+[开 issue](https://github.com/zzzwannasleep/AegisubPlugin/issues)，说清楚三样：
+点了哪个功能、选中了哪几行、看到了什么（截图最好）。字幕文件开头那几行（Script Info）
+也贴一下，样式和方案信息都在里面。
+
+## 给改代码的人
+
+`zhouxiao.lua` 是插件本体，里面**内嵌**了四段 Python（`autotime.py` / `fxedit.py` /
+`zxcore.py` / `zxai.py`）和一个安装脚本，以长字符串的形式放在文件末尾。Aegisub 每次跑宏时
+把它们写到组件目录再启动。所以改代码不能直接改组件目录里的文件——会被覆盖。
+
+```
+src\            真源码（zhouxiao.lua + 四段 Python + install.ps1）
+tools\embed.py  把 src 塞回 lua，并同步到 Aegisub 的 autoload 目录
+tools\status.py 看 src / 线上 lua / 组件目录三边对不对得上
+tools\selftest.py --all   一条命令跑完全部自动测试
+tests\          各个专项测试（含真窗口冒烟）
 ```
 
-`test_gui.py` 会弹真窗口、按标题截自己的窗口存到 `tests\fixtures\generated\`，不进 `run_all.py`
-（跑 `run_all.py` 不会带上它）。自动粗轴跑真实音频、以及需要人眼判断的预览效果，
-仍然照 `D:\Video\轴效测试\测试说明.txt` 手测。
+改动的流程：
 
-测试素材：`tests\fixtures.py` 现场合成字幕和导出文件，不绑死某一部番；
-`tests\fixtures\kara_t1.ass` 是本仓库作者自己写的卡拉OK模板（社区模板不随仓库分发）。
-真实素材可以用环境变量指：`ZX_COMPONENT` / `ZX_PY` / `ZX_VIDEO` / `ZX_AEGISUB`。
+```bat
+python tools\embed.py            # src → zhouxiao.lua（含线上那份）
+python tools\status.py           # 确认三边一致
+python tools\selftest.py --all   # 跑测试
+```
 
-## 几个容易踩的地方
+然后回 Aegisub 点「重新扫描自动化目录」。改版本号用 `python tools\embed.py --version 0.25`。
 
-- **BOM**：`autotime.py` / `install.ps1` 由 Lua 写文件时加 BOM（PowerShell 5 读中文要用），
-  所以 `src\` 里的源码是干净的、不带 BOM。`tools\embed.py` 会拒绝带 BOM 的源文件。
-- **长括号**：源码里不能出现 `]==]`，会把内嵌块提前截断（embed.py 会拦）。
-- **行尾**：全仓库用 LF（Lua 和 Python 都一样），别让编辑器改成 CRLF。
-- **路径**：Lua 部分用 LuaJIT 的 FFI 调 `CreateProcessW` 启动外部程序，不经过 cmd（不弹黑窗）；
-  中文路径靠宽字符传，没问题。但测试用的 lupa（LuaJIT 内核）跑的是标准 `io` 库，
-  打不开含中文的路径，所以测试用的临时文件都放在纯英文的 `%TEMP%` 下，
-  个别测试（`test_show.py`）干脆把 Lua 的 `io.open` 换成用 Python 开文件。
-- **组件目录可以整个删掉**：`D:\Video\Aegisub-3.4.2\zhouxiao-autotime\` 里有 `env`（Python 环境）、
-  `models`（人声分离 + whisper base）、`kara_pack`（卡拉OK模板）、以及用户数据
-  （`ai.json` 的 Key、`fx_presets.json`、`lead.txt` 提前量）。卸载 = 删文件夹，
-  重装会在下次用的时候自动弹窗下载。
+完整的开发说明（内嵌代码的坑、测试怎么跑、为什么这么设计）在 `docs\开发说明.md`。
 
 ## 授权
 
-**LGPL-3.0-or-later**（GNU 宽通用公共许可证第 3 版或更新版本），条文见 [LICENSE](LICENSE)；
-LGPLv3 附加引用的 GNU GPL v3 条文见 [LICENSE.GPL-3.0](LICENSE.GPL-3.0)。
+**LGPL-3.0-or-later**（GNU 宽通用公共许可证第 3 版或更新版本）。条文见
+[LICENSE](LICENSE)；LGPLv3 附加引用的 GNU GPL v3 条文见 [LICENSE.GPL-3.0](LICENSE.GPL-3.0)。
 
 **另有署名条款**（依 LGPLv3 第 3 条引入的 GPLv3 第 7(b) 条）：分发本作品或其修改版时，
 必须保留「原作者：zzzwannasleep」字样、不得抹去或改写；修改版还必须标明已修改及修改日期
@@ -100,12 +124,11 @@ LGPLv3 附加引用的 GNU GPL v3 条文见 [LICENSE.GPL-3.0](LICENSE.GPL-3.0)�
 
 许可证管的是「能不能用、要不要开源」；署名条款管的是「改的人认不认人」——两者都要看。
 
-## 备份与来源
+## 第三方
 
-- 官方版 Aegisub 3.4.2 备份在 `D:\Video\_dl\backup-official-3.4.2`，增强版装在 `D:\Video\Aegisub-3.4.2`。
-- 这仓库建立于 2026-10-01，从当时线上的 0.24 逐字节抽出（`tools\selftest.py` 里的
-  「塞回 lua 后逐字节一致」就是保证这件事）。
-- 更早的开发和验证记录在 `C:\Users\65282\.claude\projects\D--Video\memory\`，
-  其中 `zhouxiao-fx-workbench.md` 是最完整的一份（版本 0.19~0.24 的经验和结论）。
-  那个 scratchpad 是临时目录，随时会被清掉，能搬的都应该往这仓库搬。
-- 用户数据和测试素材在 `D:\Video\轴效测试\`（含测试说明和真实番剧基准）。
+- 插件在运行时读取并执行你本机 Aegisub 自带的 `kara-templater.lua`，用自带的
+  xy-VSFilter 渲染预览。这些属于 Aegisub 项目，不随本仓库分发。
+- 卡拉OK社区模板不随本仓库分发：插件按需从 GitHub 上的
+  [Seekladoom/Aegisub-Karaoke-Effect-481-Templates](https://github.com/Seekladoom/Aegisub-Karaoke-Effect-481-Templates)
+  下载到你本机，版权归各原作者。
+- 仓库里不含第三方代码或模板；测试素材（含 `tests\fixtures\kara_t1.ass`）都是本仓库作者写的。
