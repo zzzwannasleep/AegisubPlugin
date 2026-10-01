@@ -26,7 +26,7 @@ def lua_path():
 class Harness:
     """加载 zhouxiao.lua，并暴露：macros / rows / styles_by_name / logs / 各种可控开关"""
 
-    def __init__(self, lua_path=None, home=None, video="", frames=None, dialog=None):
+    def __init__(self, lua_path=None, home=None, video="", frames=None, dialog=None, extra_lua=""):
         lua_path = lua_path or C.lua_path()
         self.home = home or os.path.join(os.environ.get("TEMP", "."), "zx_selftest_home")
         os.makedirs(self.home, exist_ok=True)
@@ -44,6 +44,9 @@ class Harness:
         # 插件用 FFI 的 CreateProcessW 起窗口，测试里换成假的
         cut = src.index("-- 日志最后一行")
         src = src[:cut] + "if ZX_SPAWN then spawn = ZX_SPAWN end\n" + src[cut:]
+        # extra_lua：想在插件最后一行往下再补几句时用（例如把块里的局部函数挂到全局上做检查）
+        if extra_lua:
+            src = src + "\n" + extra_lua + "\n"
         self.g.ZX_SPAWN = lambda cmd, opts=None: (self.spawned.append(cmd), 0)[1]
         self.spawned = []
         self.lua.execute(src)

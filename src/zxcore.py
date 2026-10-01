@@ -844,12 +844,164 @@ def wav_cut(src, t0, t1, dst):
         w.writeframes(data)
 
 
+# ---------------------------------------------------------------- 字体（文件夹里的不进系统）
+# 用户不想把字体装进系统占地方：字体文件放在一个文件夹里，本进程用 AddFontResourceEx FR_PRIVATE 临时注册。
+# 只影响当前进程（Aegisub 或工作台），不写注册表、不复制到 C:\Windows\Fonts，关掉就没了。
+FONT_EXT = (".ttf", ".otf", ".ttc", ".otc")
+FR_PRIVATE = 0x10
+ZH_LANG = {0x0804, 0x0404, 0x0C04, 0x1404}      # zh-CN / zh-TW / zh-HK / zh-MO
+_GDI = None
+
+
+def _gdi():
+    global _GDI
+    if _GDI is None:
+        g = ctypes.windll.gdi32
+        g.CreateCompatibleDC.restype = ctypes.c_void_p
+        g.CreateFontIndirectW.restype = ctypes.c_void_p
+        g.SelectObject.restype = ctypes.c_void_p
+        g.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        g.DeleteObject.argtypes = [ctypes.c_void_p]
+        g.DeleteDC.argtypes = [ctypes.c_void_p]
+        g.GetTextFaceW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+        g.SetMapMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        _GDI = g
+    return _GDI
+
+
+def font_files(folder):
+    """文件夹里的字体文件（含子文件夹）"""
+    out = []
+    if folder and os.path.isdir(folder):
+        for root, dirs, files in os.walk(folder):
+            dirs.sort()
+            for f in sorted(files):
+                if f.lower().endswith(FONT_EXT):
+                    out.append(os.path.join(root, f))
+    return out
+
+
+def _sfnt_offsets(b):
+    """ttc/otc 里装着好几个字体，每个一个偏移；普通 ttf/otf 就是 0"""
+    if b[:4] == b"ttcf" and len(b) >= 12:
+        n = int.from_bytes(b[8:12], "big")
+        return [int.from_bytes(b[12 + i * 4:16 + i * 4], "big") for i in range(min(n, 64))]
+    return [0]
+
+
+def _name_table(b, off):
+    """找到字体里的 name 表，返回 (偏移, 长度)"""
+    if off + 12 > len(b):
+        return 0, 0
+    num = int.from_bytes(b[off + 4:off + 6], "big")
+    for i in range(num):
+        r = off + 12 + i * 16
+        if b[r:r + 4] == b"name":
+            return int.from_bytes(b[r + 8:r + 12], "big"), int.from_bytes(b[r + 12:r + 16], "big")
+    return 0, 0
+
+
+def _name_records(b, off):
+    """name 表里的每一条：平台 / 语言 / 名字类型 / 文本"""
+    out = []
+    if off + 6 > len(b):
+        return out
+    count = int.from_bytes(b[off + 2:off + 4], "big")
+    base = off + int.from_bytes(b[off + 4:off + 6], "big")
+    for i in range(count):
+        r = off + 6 + i * 12
+        pid = int.from_bytes(b[r:r + 2], "big")
+        lid = int.from_bytes(b[r + 4:r + 6], "big")
+        nid = int.from_bytes(b[r + 6:r + 8], "big")
+        ln = int.from_bytes(b[r + 8:r + 10], "big")
+        so = int.from_bytes(b[r + 10:r + 12], "big")
+        try:
+            raw = b[base + so:base + so + ln]
+            t = raw.decode("utf-16-be" if pid in (0, 3) else "mac_roman")
+        except (UnicodeDecodeError, LookupError):
+            continue
+        t = t.replace("\x00", "").strip()
+        if t:
+            out.append((pid, lid, nid, t))
+    return out
+
+
+def family_names(path, limit=2):
+    """字体文件里写的家族名：中文名在前、英文名在后（Aegisub 的样式里两种都可能用）。
+    解析不了（不是字体、文件坏了）就返回空表"""
+    try:
+        with open(path, "rb") as f:
+            b = f.read()
+    except OSError:
+        return []
+    got = []
+    for off in _sfnt_offsets(b):
+        no, nl = _name_table(b, off)
+        if not no:
+            continue
+        zh16, zh1, en16, en1 = [], [], [], []
+        for pid, lid, nid, t in _name_records(b, no):
+            if nid not in (1, 16) or pid not in (0, 3):    # 只要 Unicode / Windows 的名字，Mac 那份是乱码
+                continue
+            if pid == 3 and lid in ZH_LANG:
+                (zh16 if nid == 16 else zh1).append(t)
+            else:
+                (en16 if nid == 16 else en1).append(t)
+        for t in zh16 + zh1 + en16 + en1:
+            if t not in got:
+                got.append(t)
+    return got[:limit]
+
+
+def scan_fonts(folder):
+    """字体文件夹里有什么：{家族名: 字体文件}（名字能当样式里的字体名用）"""
+    out = {}
+    for p in font_files(folder):
+        for name in family_names(p):
+            out.setdefault(name, p)
+    return out
+
+
+def resolve_face(family, size=110):
+    """GDI 实际拿哪个字体来渲染这个名字。没装也没注册时会回退（中文常回退成「宋体」）"""
+    g = _gdi()
+    lf = _LOGFONTW()
+    lf.lfHeight = int(size * 64)
+    lf.lfWeight, lf.lfCharSet = 400, 1
+    lf.lfOutPrecision, lf.lfClipPrecision, lf.lfQuality, lf.lfPitchAndFamily = 4, 0, 4, 0
+    lf.lfFaceName = str(family)[:31]
+    hf = g.CreateFontIndirectW(ctypes.byref(lf))
+    dc = g.CreateCompatibleDC(None)
+    g.SetMapMode(dc, 1)
+    old = g.SelectObject(dc, hf)
+    buf = ctypes.create_unicode_buffer(64)
+    g.GetTextFaceW(dc, 64, buf)
+    g.SelectObject(dc, old)
+    g.DeleteObject(hf)
+    g.DeleteDC(dc)
+    return buf.value
+
+
+def _face_norm(s):
+    return "".join(str(s).split()).lower()
+
+
+def font_ok(family):
+    """这个名字 GDI 认不认（认了才说明预览真能用上它）"""
+    return bool(family) and _face_norm(resolve_face(family)) == _face_norm(family)
+
+
+def usable_fonts(folder):
+    """字体文件夹里真正能用的：{家族名: 文件}。先注册再逐个问 GDI，问不出来的就不列进界面"""
+    allf = scan_fonts(folder)
+    if allf:
+        load_fonts(folder)
+    return {k: v for k, v in allf.items() if font_ok(k)}
+
+
 def load_fonts(folder):
     """文件夹里的字体只给本进程用（FR_PRIVATE，不装进系统）：预览和量字宽都能用上字体包"""
     n = 0
-    if folder and os.path.isdir(folder):
-        for root, _, files in os.walk(folder):
-            for f in files:
-                if f.lower().endswith((".ttf", ".otf", ".ttc", ".otc")):
-                    n += ctypes.windll.gdi32.AddFontResourceExW(os.path.join(root, f), 0x10, None) > 0
+    for p in font_files(folder):
+        n += ctypes.windll.gdi32.AddFontResourceExW(p, FR_PRIVATE, None) > 0
     return n

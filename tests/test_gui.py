@@ -257,6 +257,36 @@ def main():
             app.player.seek(2.0)
         steps.append((1300, "fx 选行 + set_pos", fx_pick))
 
+        def fx_fonts():
+            check("特效样式页有「字体文件夹」那一行", bool(app.fx.folder_lbl) and bool(app.fx.folder_lbl.winfo_exists()))
+            check("字体名旁边有状态小字", bool(app.fx.font_note_lbl) and bool(app.fx.font_note_lbl.winfo_exists()))
+            folder = C.font_dir()
+            if not folder:
+                print("  （跳过）选字体文件夹：没设 ZX_FONT_DIR")
+            else:
+                # 选文件夹会存设置、还会弹一个说明框：测试里都换成临时的
+                old = (fe.SETTINGS, fe.filedialog.askdirectory, fe.messagebox.showinfo)
+                fe.SETTINGS = os.path.join(cat, "fx_settings.json")
+                fe.filedialog.askdirectory = lambda *a, **k: folder
+                fe.messagebox.showinfo = lambda *a, **k: None
+                try:
+                    app.pick_fonts()
+                finally:
+                    fe.SETTINGS, fe.filedialog.askdirectory, fe.messagebox.showinfo = old
+                lbl = app.fx.folder_lbl.cget("text")
+                check("选完文件夹后显示了文件数和能用几个", "个文件" in lbl and "能用" in lbl, lbl)
+                fams = [n for n in z.scan_fonts(folder) if n in list(app.fx.font_cb["values"])]
+                check("字体文件夹里的家族名进了字体下拉", bool(fams), (fams[:3], len(app.fx.font_cb["values"])))
+                if fams:
+                    app.fx.v["fontname"].set(fams[0])
+                    note = app.fx.font_note_lbl.cget("text")
+                    check("选文件夹里的字体时小字说「没装进系统」", "没装进系统" in note, note)
+            app.fx.v["fontname"].set("绝无此字体XYZ")
+            check("字体名不存在时小字会警告拿谁顶替",
+                  "顶替" in app.fx.font_note_lbl.cget("text"), app.fx.font_note_lbl.cget("text"))
+            app.fx.v["fontname"].set("Yu Gothic")          # 后面 fx_check 还要核这个字体，先还原
+        steps.append((1750, "fx 字体文件夹", fx_fonts))
+
         def fx_check():
             check("set_pos 后产生了待应用改动", app.fx.edits.count() > 0, app.fx.edits.count())
             styles, ev = app.preview_view()

@@ -17,7 +17,7 @@
 script_name = "轴效"
 script_description = "导入 txt / 主次与歌词 / 注释 / 屏字 / 同步中日时间 / 歌词定位 / 特效工作台（特效样式、卡拉OK、AI 助手）"
 script_author = "轴效"
-script_version = "0.24"
+script_version = "0.25"
 
 -- 名字, 对齐, 字号(占画面高的比例), 垂直边距(同)
 -- 比例取的是几个组的大致中间值，只为了开箱能看，具体作品自己调
@@ -465,6 +465,111 @@ local function zx_home()
   -- Windows 命令行传不了中文路径（系统用户名是中文时 ?user 会带中文），这时退到 ProgramData
   if h:find("[\128-\255]") then h = (os.getenv("ProgramData") or "C:\\ProgramData") .. "\\zhouxiao-autotime" end
   return h
+end
+
+-- 字体文件夹（在「轴效/7 特效样式」里选的）：里面的字体只注册给 Aegisub 这个进程，不写注册表、
+-- 不往系统字体目录拷东西，Aegisub 一关就没了。Aegisub 的预览是 csri 的 xy-VSFilter，它靠 GDI 找字体，
+-- 进程里注册过预览就直接用得上——不用装字体占系统空间。样式里写的名字就是字体文件里的家族名，
+-- 工作台那边列出来给你挑。
+-- 目录用 FFI 的 FindFirstFileW 走：宽字符路径，中文文件名也没问题，不依赖 lfs。
+local ok_gdi, gdi32 = pcall(ffi.load, "gdi32")
+if not ok_gdi then gdi32 = ffi.C end
+pcall(ffi.cdef, [[
+typedef struct { uint32_t attrs; uint32_t t1[2], t2[2], t3[2]; uint32_t size_hi, size_lo, r0, r1;
+  uint16_t name[260]; uint16_t alt[14]; } ZX_FIND;
+int AddFontResourceExW(const uint16_t *path, uint32_t flags, void *reserved);
+void *FindFirstFileW(const uint16_t *pat, ZX_FIND *data);
+int FindNextFileW(void *h, ZX_FIND *data);
+int FindClose(void *h);
+]])
+
+local font_seen = {}
+local DIR_FLAG = 0x10
+
+local function wjoin(a, b)          -- 宽字符拼路径：a .. 反斜杠 .. b
+  local la, lb = 0, 0
+  while a[la] ~= 0 do la = la + 1 end
+  while b[lb] ~= 0 do lb = lb + 1 end
+  local o = ffi.new("uint16_t[?]", la + lb + 2)
+  ffi.copy(o, a, la * 2)
+  o[la] = 92
+  ffi.copy(o + la + 1, b, lb * 2)
+  return o
+end
+
+-- 宽字符路径 → 拿来去重的字节串（ffi.string 只吃 char*，宽字符数组得自己拼）
+local function wkey(w)
+  local t, i = {}, 0
+  while w[i] ~= 0 do
+    t[#t + 1] = string.char(w[i] % 256, math.floor(w[i] / 256))
+    i = i + 1
+  end
+  return table.concat(t)
+end
+
+-- 只看扩展名（宽字符直接比，省一次编码转换）
+local function is_font_name(nm)
+  local i, last = 0, -1
+  while nm[i] ~= 0 do
+    if nm[i] == 46 then last = i end
+    i = i + 1
+  end
+  if last < 0 then return false end
+  local e = {}
+  for k = last + 1, i - 1 do
+    local c = nm[k]
+    if c < 33 or c > 126 then return false end
+    if c >= 97 and c <= 122 then c = c - 32 end
+    e[#e + 1] = string.char(c)
+  end
+  e = table.concat(e)
+  return e == "TTF" or e == "OTF" or e == "TTC" or e == "OTC"
+end
+
+-- 返回这次注册了几个（注册过的跳过，宏开一次不会重复注册）
+local function register_folder_fonts(folder)
+  if not folder or folder == "" then return 0 end
+  local n = 0
+  local function walk(dir, depth)
+    local fd = ffi.new("ZX_FIND")
+    local h = ffi.C.FindFirstFileW(wjoin(dir, wide("*")), fd)
+    if ffi.cast("intptr_t", h) == -1 then return end
+    repeat
+      local nm = fd.name
+      if not (nm[0] == 46 and (nm[1] == 0 or (nm[1] == 46 and nm[2] == 0))) then
+        local full = wjoin(dir, nm)
+        if bit.band(fd.attrs, DIR_FLAG) ~= 0 then
+          if depth < 4 then walk(full, depth + 1) end
+        elseif is_font_name(nm) then
+          local key = wkey(full)           -- 只拿来去重，不当路径用
+          if not font_seen[key] then
+            font_seen[key] = true
+            if gdi32.AddFontResourceExW(full, 0x10, nil) > 0 then n = n + 1 end
+          end
+        end
+      end
+    until ffi.C.FindNextFileW(h, fd) == 0
+    ffi.C.FindClose(h)
+  end
+  walk(wide(folder), 1)
+  if n > 0 then
+    aegisub.log(3, "字体文件夹：注册了 %d 个字体给 Aegisub 用（没装进系统）\n", n)
+  end
+  return n
+end
+
+-- 字体文件夹记在工作台的设置里（fx_settings.json），工作台里换过这里跟着读
+local function folder_fonts_from_settings()
+  local f = io.open(zx_home() .. "\\fx_settings.json", "rb")
+  if not f then return "" end
+  local s = f:read("*a")
+  f:close()
+  return ((s:match('"fonts_dir"%s*:%s*"([^"]*)"') or ""):gsub("\\\\", "\\"))
+end
+
+local function refresh_folder_fonts()
+  local ok = pcall(function() register_folder_fonts(folder_fonts_from_settings()) end)
+  return ok
 end
 
 -- 没装就弹窗问要不要下载；装好了返回组件目录
@@ -963,6 +1068,7 @@ local function workbench(tab)
     local t = video_time() or (a and a.class == "dialogue" and a.start_time) or 0
     local cat, num, _, saved = resolve_catalog(subs, false)
     local dump, job, out = home .. "\\fx_dump.tsv", home .. "\\fxjob.json", home .. "\\fx_ops.tsv"
+    refresh_folder_fonts()   -- 上次选的字体文件夹：进工作台前先给 Aegisub 注册上
     aegisub.progress.title("把字幕交给特效工作台……")
     dump_subs(subs, dump)
     os.remove(out)
@@ -976,6 +1082,7 @@ local function workbench(tab)
     aegisub.progress.title("特效工作台开着：关掉它再回来（点取消会直接关掉工作台，不应用）")
     spawn(string.format('"%s\\env\\Scripts\\pythonw.exe" "%s\\fxedit.py" --job "%s"', home, home, job),
       {poll = aegisub.progress.is_cancelled})
+    refresh_folder_fonts()   -- 工作台里可能刚换过字体文件夹，回来立刻补上
     if apply_ops(subs, out) then aegisub.set_undo_point("轴效特效工作台") end
   end
 end
@@ -997,11 +1104,18 @@ aegisub.register_macro("轴效/7 特效样式", "预设套到所选行：淡入�
 aegisub.register_macro("轴效/8 卡拉OK特效", "所选歌词自动打 \\k，套社区模板或自己的模板，预览后应用", workbench("kara"))
 aegisub.register_macro("轴效/9 AI 助手", "接 OpenAI / Anthropic 接口，AI 直接读改字幕、写特效，预览后应用", workbench("ai"))
 
+-- 插件一加载（Aegisub 启动）就把用户字体文件夹里的字体注册给这个进程：
+-- 这样预览的第一次渲染就认得它们，不用等用到某个宏
+refresh_folder_fonts()
+
 -- ===================================================================
 -- 下面是自动粗轴要用的两个脚本，第一次用时写到组件目录里（见 ensure_installed）
 -- ===================================================================
 
 AUTOTIME_PY = [==[
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效粗轴：已有原文（日文或中文），让 whisper 做强制对齐（找每句在哪），不做听写。
 
 - 人声分离：UVR 的 MDX-Net 模型（ONNX），跑在 DirectML 上 —— N 卡 / A 卡 / Intel 独显都能用
@@ -1460,6 +1574,9 @@ if __name__ == "__main__":
 ]==]
 
 FXEDIT_PY = [==[
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效特效工作台：特效样式 / 卡拉OK / AI 助手 三页，右边是带声音的视频预览（所选行前后各 5 秒）。
 预览用 Aegisub 自带的 xy-VSFilter 渲染；卡拉OK直接跑 Aegisub 的 kara-templater.lua（在 Python 里用 LuaJIT）。
 改动先攒着，点「应用」才写回 Aegisub（整批一步撤销）。
@@ -1922,6 +2039,12 @@ def font_names(root):
     return sorted(names, key=str.lower)
 
 
+def short_path(p, n=46):
+    """长路径只留尾巴，界面上一行放得下"""
+    p = p.replace("/", "\\").rstrip("\\")
+    return p if len(p) <= n else "…" + p[1 - n:]
+
+
 def load_settings():
     try:
         return json.load(open(SETTINGS, encoding="utf-8"))
@@ -2362,7 +2485,12 @@ class FxTab(ttk.Frame):
         self.fonts = self.app.fonts()
         self.font_cb = ttk.Combobox(f, values=self.fonts, width=24, textvariable=self.var("fontname"))
         self.font_cb.bind("<KeyRelease>", self.filter_fonts)
-        row("字体", self.font_cb, ttk.Label(f, text="打字筛选，↓ 展开", foreground="#888"))
+        fnote = ttk.Label(f, foreground="#888")
+        row("字体", self.font_cb, fnote)
+        self.folder_lbl = ttk.Label(f, foreground="#666")
+        row("字体文件夹", ttk.Button(f, text="选择…", command=self.app.pick_fonts), self.folder_lbl)
+        self.font_note_lbl = fnote
+        self.var("fontname").trace_add("write", lambda *a: self.font_note())
         row("字号", spin("fontsize", 1, 999), ttk.Checkbutton(f, text="粗体", variable=self.var("bold", tk.IntVar)),
             ttk.Checkbutton(f, text="斜体", variable=self.var("italic", tk.IntVar)))
         self.swatch = {}
@@ -2426,6 +2554,23 @@ class FxTab(ttk.Frame):
         q = self.font_cb.get().lower().replace(" ", "")
         hit = [x for x in self.fonts if q in x.lower().replace(" ", "")] if q else self.fonts
         self.font_cb["values"] = hit or self.fonts
+
+    def font_note(self):
+        """字体名旁边那行小字：在字体文件夹里 / 找不到会顶替成什么"""
+        txt, color = self.app.font_note(self.v["fontname"].get())
+        self.font_note_lbl.config(text=txt, foreground=color)
+
+    def fonts_cb_update(self):
+        """字体文件夹换了：下拉、小字都跟着重来"""
+        self.fonts = self.app.fonts()
+        self.font_cb["values"] = self.fonts
+        d = self.app.font_folder()
+        if d:
+            self.folder_lbl.config(text="%s（%d 个文件，能用 %d 个）" % (short_path(d), len(z.font_files(d)),
+                                                                    len(self.app.folder_fonts())))
+        else:
+            self.folder_lbl.config(text="没设：只列系统装了的字体")
+        self.font_note()
 
     def fnum(self, k, default):
         try:
@@ -3418,6 +3563,7 @@ class App(tk.Tk):
         z.load_fonts(self.settings.get("fonts_dir"))
         self.measure = z.Measure()
         self._kara, self._fonts = None, None
+        self._folder, self._face_ok = None, {}
         self.ui_q = queue.Queue()
         self.pending = {}
         self.tabs = []
@@ -3438,6 +3584,7 @@ class App(tk.Tk):
         self.status = ttk.Label(bot, foreground="#666")
         self.status.pack(side="left")
         self.fx = FxTab(nb, self)
+        self.fx.fonts_cb_update()
         self.ka = KaraTab(nb, self)
         self.ai = AiTab(nb, self)
         self.tabs = [self.fx, self.ka, self.ai]
@@ -3449,7 +3596,6 @@ class App(tk.Tk):
         ttk.Button(bot, text="关闭", command=self.close).pack(side="right", padx=2)
         ttk.Button(bot, text="应用", command=self.apply).pack(side="right", padx=2)
         ttk.Button(bot, text="保存方案", command=self.fx.save).pack(side="right", padx=2)
-        ttk.Button(bot, text="预览字体文件夹…", command=self.pick_fonts).pack(side="right", padx=8)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.bind("<space>", self.space)
         self.bind("<KeyPress-k>", self.key_k)
@@ -3460,10 +3606,33 @@ class App(tk.Tk):
         self.edits_changed()
         self.after(30, self.poll)
 
+    def font_folder(self):
+        return self.settings.get("fonts_dir") or ""
+
+    def folder_fonts(self):
+        """字体文件夹里能用的家族：{名字: 文件}。第一次问的时候顺手把它们注册给本进程"""
+        if self._folder is None:
+            self._folder = z.usable_fonts(self.font_folder())
+        return self._folder
+
     def fonts(self):
         if self._fonts is None:
-            self._fonts = font_names(self)
+            names = set(font_names(self))
+            names.update(self.folder_fonts())
+            self._fonts = sorted(names, key=str.lower)
         return self._fonts
+
+    def font_note(self, name):
+        """这个字体名能不能用上：在字体文件夹里 / 系统装了 / 会回退成谁（返回文字和颜色）"""
+        if not name:
+            return "", "#888"
+        if name in self.folder_fonts():
+            return "字体文件夹里的（没装进系统）", "#0a7a44"
+        if name not in self._face_ok:
+            self._face_ok[name] = z.font_ok(name)
+        if not self._face_ok[name]:
+            return "⚠ 找不到这个字体，预览会拿「%s」顶替" % z.resolve_face(name), "#c0392b"
+        return "打字筛选，↓ 展开", "#888"
 
     def kara(self):
         if self._kara is None:
@@ -3565,20 +3734,26 @@ class App(tk.Tk):
                 f.pack_forget()
 
     def pick_fonts(self):
-        d = filedialog.askdirectory(title="选字体文件夹", parent=self,
-                                    initialdir=self.settings.get("fonts_dir") or "")
-        if d:
-            n = z.load_fonts(d)
-            self.settings["fonts_dir"] = d
-            save_settings(self.settings)
-            self._fonts = None
-            self.measure = z.Measure()
-            if self._kara:
-                self._kara.measure = z.Measure()
-            self.player.vsf.doc = None
-            self.fx.changed()
-            self.ka.changed()
-            messagebox.showinfo("字体", f"加载了 {n} 个字体文件", parent=self)
+        d = filedialog.askdirectory(title="选字体文件夹（里面的字体不装进系统，只给工作台和 Aegisub 的预览用）",
+                                    parent=self, initialdir=self.font_folder() or "")
+        if not d:
+            return
+        d = os.path.abspath(d)
+        self.settings["fonts_dir"] = d
+        save_settings(self.settings)
+        z.load_fonts(d)
+        self._folder, self._fonts, self._face_ok = None, None, {}
+        self.measure = z.Measure()
+        if self._kara:
+            self._kara.measure = z.Measure()
+        self.player.vsf.doc = None
+        self.fx.fonts_cb_update()
+        self.fx.changed()
+        self.ka.changed()
+        messagebox.showinfo("字体文件夹",
+                            "%s\n\n扫到 %d 个字体文件，能用上 %d 个家族。\n没装进系统，Aegisub 关掉就没了——"
+                            "下次开工作台会自动再注册一遍。" % (d, len(z.font_files(d)),
+                                                          len(self.folder_fonts())), parent=self)
 
     def apply(self):
         e = self.all_edits()
@@ -3625,6 +3800,9 @@ if __name__ == "__main__":
 ]==]
 
 ZXCORE_PY = [==[
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效工作台的底层：字幕数据（Lua 导出 / 改动写回）、VSFilter 渲染、视频音频片段、卡拉OK模板、自动 \\k。
 不含界面，fxedit.py（界面）和 zxai.py（AI）都用它。"""
 import ctypes, io, os, re, threading, wave
@@ -4468,18 +4646,173 @@ def wav_cut(src, t0, t1, dst):
         w.writeframes(data)
 
 
+# ---------------------------------------------------------------- 字体（文件夹里的不进系统）
+# 用户不想把字体装进系统占地方：字体文件放在一个文件夹里，本进程用 AddFontResourceEx FR_PRIVATE 临时注册。
+# 只影响当前进程（Aegisub 或工作台），不写注册表、不复制到 C:\Windows\Fonts，关掉就没了。
+FONT_EXT = (".ttf", ".otf", ".ttc", ".otc")
+FR_PRIVATE = 0x10
+ZH_LANG = {0x0804, 0x0404, 0x0C04, 0x1404}      # zh-CN / zh-TW / zh-HK / zh-MO
+_GDI = None
+
+
+def _gdi():
+    global _GDI
+    if _GDI is None:
+        g = ctypes.windll.gdi32
+        g.CreateCompatibleDC.restype = ctypes.c_void_p
+        g.CreateFontIndirectW.restype = ctypes.c_void_p
+        g.SelectObject.restype = ctypes.c_void_p
+        g.SelectObject.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        g.DeleteObject.argtypes = [ctypes.c_void_p]
+        g.DeleteDC.argtypes = [ctypes.c_void_p]
+        g.GetTextFaceW.argtypes = [ctypes.c_void_p, ctypes.c_int, ctypes.c_wchar_p]
+        g.SetMapMode.argtypes = [ctypes.c_void_p, ctypes.c_int]
+        _GDI = g
+    return _GDI
+
+
+def font_files(folder):
+    """文件夹里的字体文件（含子文件夹）"""
+    out = []
+    if folder and os.path.isdir(folder):
+        for root, dirs, files in os.walk(folder):
+            dirs.sort()
+            for f in sorted(files):
+                if f.lower().endswith(FONT_EXT):
+                    out.append(os.path.join(root, f))
+    return out
+
+
+def _sfnt_offsets(b):
+    """ttc/otc 里装着好几个字体，每个一个偏移；普通 ttf/otf 就是 0"""
+    if b[:4] == b"ttcf" and len(b) >= 12:
+        n = int.from_bytes(b[8:12], "big")
+        return [int.from_bytes(b[12 + i * 4:16 + i * 4], "big") for i in range(min(n, 64))]
+    return [0]
+
+
+def _name_table(b, off):
+    """找到字体里的 name 表，返回 (偏移, 长度)"""
+    if off + 12 > len(b):
+        return 0, 0
+    num = int.from_bytes(b[off + 4:off + 6], "big")
+    for i in range(num):
+        r = off + 12 + i * 16
+        if b[r:r + 4] == b"name":
+            return int.from_bytes(b[r + 8:r + 12], "big"), int.from_bytes(b[r + 12:r + 16], "big")
+    return 0, 0
+
+
+def _name_records(b, off):
+    """name 表里的每一条：平台 / 语言 / 名字类型 / 文本"""
+    out = []
+    if off + 6 > len(b):
+        return out
+    count = int.from_bytes(b[off + 2:off + 4], "big")
+    base = off + int.from_bytes(b[off + 4:off + 6], "big")
+    for i in range(count):
+        r = off + 6 + i * 12
+        pid = int.from_bytes(b[r:r + 2], "big")
+        lid = int.from_bytes(b[r + 4:r + 6], "big")
+        nid = int.from_bytes(b[r + 6:r + 8], "big")
+        ln = int.from_bytes(b[r + 8:r + 10], "big")
+        so = int.from_bytes(b[r + 10:r + 12], "big")
+        try:
+            raw = b[base + so:base + so + ln]
+            t = raw.decode("utf-16-be" if pid in (0, 3) else "mac_roman")
+        except (UnicodeDecodeError, LookupError):
+            continue
+        t = t.replace("\x00", "").strip()
+        if t:
+            out.append((pid, lid, nid, t))
+    return out
+
+
+def family_names(path, limit=2):
+    """字体文件里写的家族名：中文名在前、英文名在后（Aegisub 的样式里两种都可能用）。
+    解析不了（不是字体、文件坏了）就返回空表"""
+    try:
+        with open(path, "rb") as f:
+            b = f.read()
+    except OSError:
+        return []
+    got = []
+    for off in _sfnt_offsets(b):
+        no, nl = _name_table(b, off)
+        if not no:
+            continue
+        zh16, zh1, en16, en1 = [], [], [], []
+        for pid, lid, nid, t in _name_records(b, no):
+            if nid not in (1, 16) or pid not in (0, 3):    # 只要 Unicode / Windows 的名字，Mac 那份是乱码
+                continue
+            if pid == 3 and lid in ZH_LANG:
+                (zh16 if nid == 16 else zh1).append(t)
+            else:
+                (en16 if nid == 16 else en1).append(t)
+        for t in zh16 + zh1 + en16 + en1:
+            if t not in got:
+                got.append(t)
+    return got[:limit]
+
+
+def scan_fonts(folder):
+    """字体文件夹里有什么：{家族名: 字体文件}（名字能当样式里的字体名用）"""
+    out = {}
+    for p in font_files(folder):
+        for name in family_names(p):
+            out.setdefault(name, p)
+    return out
+
+
+def resolve_face(family, size=110):
+    """GDI 实际拿哪个字体来渲染这个名字。没装也没注册时会回退（中文常回退成「宋体」）"""
+    g = _gdi()
+    lf = _LOGFONTW()
+    lf.lfHeight = int(size * 64)
+    lf.lfWeight, lf.lfCharSet = 400, 1
+    lf.lfOutPrecision, lf.lfClipPrecision, lf.lfQuality, lf.lfPitchAndFamily = 4, 0, 4, 0
+    lf.lfFaceName = str(family)[:31]
+    hf = g.CreateFontIndirectW(ctypes.byref(lf))
+    dc = g.CreateCompatibleDC(None)
+    g.SetMapMode(dc, 1)
+    old = g.SelectObject(dc, hf)
+    buf = ctypes.create_unicode_buffer(64)
+    g.GetTextFaceW(dc, 64, buf)
+    g.SelectObject(dc, old)
+    g.DeleteObject(hf)
+    g.DeleteDC(dc)
+    return buf.value
+
+
+def _face_norm(s):
+    return "".join(str(s).split()).lower()
+
+
+def font_ok(family):
+    """这个名字 GDI 认不认（认了才说明预览真能用上它）"""
+    return bool(family) and _face_norm(resolve_face(family)) == _face_norm(family)
+
+
+def usable_fonts(folder):
+    """字体文件夹里真正能用的：{家族名: 文件}。先注册再逐个问 GDI，问不出来的就不列进界面"""
+    allf = scan_fonts(folder)
+    if allf:
+        load_fonts(folder)
+    return {k: v for k, v in allf.items() if font_ok(k)}
+
+
 def load_fonts(folder):
     """文件夹里的字体只给本进程用（FR_PRIVATE，不装进系统）：预览和量字宽都能用上字体包"""
     n = 0
-    if folder and os.path.isdir(folder):
-        for root, _, files in os.walk(folder):
-            for f in files:
-                if f.lower().endswith((".ttf", ".otf", ".ttc", ".otc")):
-                    n += ctypes.windll.gdi32.AddFontResourceExW(os.path.join(root, f), 0x10, None) > 0
+    for p in font_files(folder):
+        n += ctypes.windll.gdi32.AddFontResourceExW(p, FR_PRIVATE, None) > 0
     return n
 ]==]
 
 ZXAI_PY = [==[
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """AI 字幕助手：OpenAI 兼容协议 / Anthropic 协议，流式输出 + 工具调用。
 只用标准库（urllib），走系统代理设置。Key 存在组件目录的 ai.json，只在本机。"""
 import base64, json, os, urllib.request
@@ -4743,6 +5076,11 @@ TOOLS = [
 
 INSTALL_PS1 = [==[
 # 轴效「自动粗轴」组件安装：在本脚本所在目录装一套独立的 Python 环境 + 两个模型
+#
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
+#
 # 不碰系统里已有的 Python；卸载 = 删掉这个文件夹
 # 两个模型和「uv → Python → 依赖」互不相干，一开始就在后台同时下；依赖包 uv 自己也是并行下的
 param([switch]$Lite)

@@ -9,6 +9,7 @@
     ZX_PY          跑子进程用的 Python（默认 <组件>\\env\\Scripts\\python.exe）
     ZX_VIDEO       要用真实视频跑 GUI 测试时指过去（默认不用，测试自己合成视频）
     ZX_KARA_TEMPLATE  换一份卡拉OK模板跑 roundtrip
+    ZX_FONT_DIR    放「没装进系统」的字体的文件夹（测文件夹字体用；没设就跳过那几项）
 """
 import contextlib
 import importlib
@@ -61,6 +62,12 @@ def component_dir():
 
 PY = os.environ.get("ZX_PY")            # None = 按组件目录推
 VIDEO = os.environ.get("ZX_VIDEO")      # None = 测试自己合成视频
+FONT_DIR = os.environ.get("ZX_FONT_DIR")   # None = 跳过「没装进系统的字体」那些用例
+
+
+def font_dir():
+    """放「没装进系统」的字体的文件夹（测文件夹字体用）。没设就返回 None，用例会跳过。"""
+    return FONT_DIR
 
 
 def python_exe():

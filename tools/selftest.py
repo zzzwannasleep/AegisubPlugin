@@ -28,7 +28,6 @@ import luaharness                  # noqa: E402
 import testconfig as C             # noqa: E402
 
 SRC = os.path.join(ROOT, "src")
-LUA = None                         # 用 C.lua_path()：Aegisub 目录由 testconfig 解析
 
 
 def lua_path():
@@ -82,7 +81,7 @@ def row_of(rows, style, text=None):
 
 def test_source_parity():
     section("1-2. 源码一致性")
-    original = embedtool.read(LUA)
+    original = embedtool.read(lua_path())
     text = original
     for var, name, _ in embedtool.BLOCKS:
         body = embedtool.read(os.path.join(SRC, name))

@@ -463,6 +463,12 @@ def font_names(root):
     return sorted(names, key=str.lower)
 
 
+def short_path(p, n=46):
+    """长路径只留尾巴，界面上一行放得下"""
+    p = p.replace("/", "\\").rstrip("\\")
+    return p if len(p) <= n else "…" + p[1 - n:]
+
+
 def load_settings():
     try:
         return json.load(open(SETTINGS, encoding="utf-8"))
@@ -903,7 +909,12 @@ class FxTab(ttk.Frame):
         self.fonts = self.app.fonts()
         self.font_cb = ttk.Combobox(f, values=self.fonts, width=24, textvariable=self.var("fontname"))
         self.font_cb.bind("<KeyRelease>", self.filter_fonts)
-        row("字体", self.font_cb, ttk.Label(f, text="打字筛选，↓ 展开", foreground="#888"))
+        fnote = ttk.Label(f, foreground="#888")
+        row("字体", self.font_cb, fnote)
+        self.folder_lbl = ttk.Label(f, foreground="#666")
+        row("字体文件夹", ttk.Button(f, text="选择…", command=self.app.pick_fonts), self.folder_lbl)
+        self.font_note_lbl = fnote
+        self.var("fontname").trace_add("write", lambda *a: self.font_note())
         row("字号", spin("fontsize", 1, 999), ttk.Checkbutton(f, text="粗体", variable=self.var("bold", tk.IntVar)),
             ttk.Checkbutton(f, text="斜体", variable=self.var("italic", tk.IntVar)))
         self.swatch = {}
@@ -967,6 +978,23 @@ class FxTab(ttk.Frame):
         q = self.font_cb.get().lower().replace(" ", "")
         hit = [x for x in self.fonts if q in x.lower().replace(" ", "")] if q else self.fonts
         self.font_cb["values"] = hit or self.fonts
+
+    def font_note(self):
+        """字体名旁边那行小字：在字体文件夹里 / 找不到会顶替成什么"""
+        txt, color = self.app.font_note(self.v["fontname"].get())
+        self.font_note_lbl.config(text=txt, foreground=color)
+
+    def fonts_cb_update(self):
+        """字体文件夹换了：下拉、小字都跟着重来"""
+        self.fonts = self.app.fonts()
+        self.font_cb["values"] = self.fonts
+        d = self.app.font_folder()
+        if d:
+            self.folder_lbl.config(text="%s（%d 个文件，能用 %d 个）" % (short_path(d), len(z.font_files(d)),
+                                                                    len(self.app.folder_fonts())))
+        else:
+            self.folder_lbl.config(text="没设：只列系统装了的字体")
+        self.font_note()
 
     def fnum(self, k, default):
         try:
@@ -1959,6 +1987,7 @@ class App(tk.Tk):
         z.load_fonts(self.settings.get("fonts_dir"))
         self.measure = z.Measure()
         self._kara, self._fonts = None, None
+        self._folder, self._face_ok = None, {}
         self.ui_q = queue.Queue()
         self.pending = {}
         self.tabs = []
@@ -1979,6 +2008,7 @@ class App(tk.Tk):
         self.status = ttk.Label(bot, foreground="#666")
         self.status.pack(side="left")
         self.fx = FxTab(nb, self)
+        self.fx.fonts_cb_update()
         self.ka = KaraTab(nb, self)
         self.ai = AiTab(nb, self)
         self.tabs = [self.fx, self.ka, self.ai]
@@ -1990,7 +2020,6 @@ class App(tk.Tk):
         ttk.Button(bot, text="关闭", command=self.close).pack(side="right", padx=2)
         ttk.Button(bot, text="应用", command=self.apply).pack(side="right", padx=2)
         ttk.Button(bot, text="保存方案", command=self.fx.save).pack(side="right", padx=2)
-        ttk.Button(bot, text="预览字体文件夹…", command=self.pick_fonts).pack(side="right", padx=8)
         self.protocol("WM_DELETE_WINDOW", self.close)
         self.bind("<space>", self.space)
         self.bind("<KeyPress-k>", self.key_k)
@@ -2001,10 +2030,33 @@ class App(tk.Tk):
         self.edits_changed()
         self.after(30, self.poll)
 
+    def font_folder(self):
+        return self.settings.get("fonts_dir") or ""
+
+    def folder_fonts(self):
+        """字体文件夹里能用的家族：{名字: 文件}。第一次问的时候顺手把它们注册给本进程"""
+        if self._folder is None:
+            self._folder = z.usable_fonts(self.font_folder())
+        return self._folder
+
     def fonts(self):
         if self._fonts is None:
-            self._fonts = font_names(self)
+            names = set(font_names(self))
+            names.update(self.folder_fonts())
+            self._fonts = sorted(names, key=str.lower)
         return self._fonts
+
+    def font_note(self, name):
+        """这个字体名能不能用上：在字体文件夹里 / 系统装了 / 会回退成谁（返回文字和颜色）"""
+        if not name:
+            return "", "#888"
+        if name in self.folder_fonts():
+            return "字体文件夹里的（没装进系统）", "#0a7a44"
+        if name not in self._face_ok:
+            self._face_ok[name] = z.font_ok(name)
+        if not self._face_ok[name]:
+            return "⚠ 找不到这个字体，预览会拿「%s」顶替" % z.resolve_face(name), "#c0392b"
+        return "打字筛选，↓ 展开", "#888"
 
     def kara(self):
         if self._kara is None:
@@ -2106,20 +2158,26 @@ class App(tk.Tk):
                 f.pack_forget()
 
     def pick_fonts(self):
-        d = filedialog.askdirectory(title="选字体文件夹", parent=self,
-                                    initialdir=self.settings.get("fonts_dir") or "")
-        if d:
-            n = z.load_fonts(d)
-            self.settings["fonts_dir"] = d
-            save_settings(self.settings)
-            self._fonts = None
-            self.measure = z.Measure()
-            if self._kara:
-                self._kara.measure = z.Measure()
-            self.player.vsf.doc = None
-            self.fx.changed()
-            self.ka.changed()
-            messagebox.showinfo("字体", f"加载了 {n} 个字体文件", parent=self)
+        d = filedialog.askdirectory(title="选字体文件夹（里面的字体不装进系统，只给工作台和 Aegisub 的预览用）",
+                                    parent=self, initialdir=self.font_folder() or "")
+        if not d:
+            return
+        d = os.path.abspath(d)
+        self.settings["fonts_dir"] = d
+        save_settings(self.settings)
+        z.load_fonts(d)
+        self._folder, self._fonts, self._face_ok = None, None, {}
+        self.measure = z.Measure()
+        if self._kara:
+            self._kara.measure = z.Measure()
+        self.player.vsf.doc = None
+        self.fx.fonts_cb_update()
+        self.fx.changed()
+        self.ka.changed()
+        messagebox.showinfo("字体文件夹",
+                            "%s\n\n扫到 %d 个字体文件，能用上 %d 个家族。\n没装进系统，Aegisub 关掉就没了——"
+                            "下次开工作台会自动再注册一遍。" % (d, len(z.font_files(d)),
+                                                          len(self.folder_fonts())), parent=self)
 
     def apply(self):
         e = self.all_edits()
