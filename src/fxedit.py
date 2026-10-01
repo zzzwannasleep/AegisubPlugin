@@ -1,3 +1,6 @@
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效特效工作台：特效样式 / 卡拉OK / AI 助手 三页，右边是带声音的视频预览（所选行前后各 5 秒）。
 预览用 Aegisub 自带的 xy-VSFilter 渲染；卡拉OK直接跑 Aegisub 的 kara-templater.lua（在 Python 里用 LuaJIT）。
 改动先攒着，点「应用」才写回 Aegisub（整批一步撤销）。

@@ -1,4 +1,12 @@
 -- 轴效：打轴 + 特效字幕
+--
+-- Copyright (C) 2026 zzzwannasleep
+-- 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+--
+-- 本程序是自由软件：你可以按 GNU 宽通用公共许可证（LGPL）第 3 版或更新版本的条款
+-- 再分发和/或修改它。本程序按「现状」提供，不附带任何担保。
+-- 条文见 LICENSE / LICENSE.GPL-3.0；出处与附加的署名要求见 NOTICE。
+--
 -- 只管各组通用的结构（对照 Haruhana / 喵萌 / 绿茶 / smzase 的成品）：
 --   中日分样式、各自一行、时间相同，日文贴边、中文在里；次要台词用一对顶部样式；
 --   OP/ED/插曲 歌词各一对中日样式；注释、屏字各一个样式

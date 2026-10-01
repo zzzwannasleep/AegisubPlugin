@@ -1,3 +1,6 @@
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效粗轴：已有原文（日文或中文），让 whisper 做强制对齐（找每句在哪），不做听写。
 
 - 人声分离：UVR 的 MDX-Net 模型（ONNX），跑在 DirectML 上 —— N 卡 / A 卡 / Intel 独显都能用

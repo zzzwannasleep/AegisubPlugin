@@ -1,3 +1,6 @@
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """AI 字幕助手：OpenAI 兼容协议 / Anthropic 协议，流式输出 + 工具调用。
 只用标准库（urllib），走系统代理设置。Key 存在组件目录的 ai.json，只在本机。"""
 import base64, json, os, urllib.request

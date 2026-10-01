@@ -1,3 +1,6 @@
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
 """轴效工作台的底层：字幕数据（Lua 导出 / 改动写回）、VSFilter 渲染、视频音频片段、卡拉OK模板、自动 \\k。
 不含界面，fxedit.py（界面）和 zxai.py（AI）都用它。"""
 import ctypes, io, os, re, threading, wave

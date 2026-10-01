@@ -3,7 +3,7 @@
 字幕组「轴效」岗位用的 Aegisub 自动化插件：导入中日 txt、打轴、主次/歌词/注释/屏字、
 自动粗轴、特效工作台（特效样式 / 卡拉OK / AI 助手）。
 
-**当前版本 0.24**，跑在 arch1t3cht 增强版 Aegisub（`D:\Video\Aegisub-3.4.2`）。
+**作者：zzzwannasleep** ｜ **当前版本 0.24**，跑在 arch1t3cht 增强版 Aegisub（`D:\Video\Aegisub-3.4.2`）。
 
 ## 目录里有什么
 
@@ -71,7 +71,7 @@ D:\Video\Aegisub-3.4.2\zhouxiao-autotime\env\Scripts\python.exe tests\test_gui.p
 仍然照 `D:\Video\轴效测试\测试说明.txt` 手测。
 
 测试素材：`tests\fixtures.py` 现场合成字幕和导出文件，不绑死某一部番；
-`tests\fixtures\kara_t1.ass` 是一份社区卡拉OK模板，当作模板引擎的输入。
+`tests\fixtures\kara_t1.ass` 是本仓库作者自己写的卡拉OK模板（社区模板不随仓库分发）。
 真实素材可以用环境变量指：`ZX_COMPONENT` / `ZX_PY` / `ZX_VIDEO` / `ZX_AEGISUB`。
 
 ## 几个容易踩的地方
@@ -88,6 +88,17 @@ D:\Video\Aegisub-3.4.2\zhouxiao-autotime\env\Scripts\python.exe tests\test_gui.p
   `models`（人声分离 + whisper base）、`kara_pack`（卡拉OK模板）、以及用户数据
   （`ai.json` 的 Key、`fx_presets.json`、`lead.txt` 提前量）。卸载 = 删文件夹，
   重装会在下次用的时候自动弹窗下载。
+
+## 授权
+
+**LGPL-3.0-or-later**（GNU 宽通用公共许可证第 3 版或更新版本），条文见 [LICENSE](LICENSE)；
+LGPLv3 附加引用的 GNU GPL v3 条文见 [LICENSE.GPL-3.0](LICENSE.GPL-3.0)。
+
+**另有署名条款**（依 LGPLv3 第 3 条引入的 GPLv3 第 7(b) 条）：分发本作品或其修改版时，
+必须保留「原作者：zzzwannasleep」字样、不得抹去或改写；修改版还必须标明已修改及修改日期
+（GPLv3 第 5(a) 条），并且不得暗示是原作者的版本。具体见 [NOTICE](NOTICE)。
+
+许可证管的是「能不能用、要不要开源」；署名条款管的是「改的人认不认人」——两者都要看。
 
 ## 备份与来源
 

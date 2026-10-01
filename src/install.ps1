@@ -1,4 +1,9 @@
 # 轴效「自动粗轴」组件安装：在本脚本所在目录装一套独立的 Python 环境 + 两个模型
+#
+# Copyright (C) 2026 zzzwannasleep
+# 原作者：zzzwannasleep（https://github.com/zzzwannasleep/AegisubPlugin）
+# 授权：LGPL-3.0-or-later，条文见 LICENSE；出处与附加的署名要求见 NOTICE。
+#
 # 不碰系统里已有的 Python；卸载 = 删掉这个文件夹
 # 两个模型和「uv → Python → 依赖」互不相干，一开始就在后台同时下；依赖包 uv 自己也是并行下的
 param([switch]$Lite)
