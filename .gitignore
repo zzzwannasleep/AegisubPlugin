@@ -1,9 +1,11 @@
-# 这是插件的源码仓库
-# 真正跑的东西在 D:\Video\Aegisub-3.4.2\：
-#   automation\autoload\zhouxiao.lua   ← 插件本体（src\zhouxiao.lua 是它）
-#   zhouxiao-autotime\                 ← Python 组件（env / models / 卡拉OK模板 / 用户数据）
+# 这是源码仓库：src\ 是真源码，tools\ 把 src 塞回 zhouxiao.lua 并装到 Aegisub 的
+# automation\autoload\ 下。组件（Python 环境 / 模型 / 卡拉OK模板 / 用户数据）在
+# Aegisub 目录的 zhouxiao-autotime\ 里，不在本仓库。
 
-# 用户数据，不进版本控制
+# 本机备忘，每个 checkout 自己写，不进版本控制
+AGENTS.md
+
+# 用户数据（组件目录里那些，理论上不在仓库里；列出来是防手滑 cp 进来）
 *.local.json
 ai.json
 ai_history.json
