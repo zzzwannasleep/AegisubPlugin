@@ -1,0 +1,9 @@
+# 全仓库固定 LF：插件靠「src 塞回 lua 后逐字节一致」来校验，行尾一变就废了。
+# 注意：source 里的 autotime.py / install.ps1 不带 BOM，BOM 是 Lua 写文件时加的。
+* text=auto eol=lf
+*.ps1 text eol=lf
+*.lua text eol=lf
+*.py text eol=lf
+*.md text eol=lf
+*.txt text eol=lf
+*.tsv text eol=lf

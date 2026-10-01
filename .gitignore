@@ -1,0 +1,23 @@
+# 这是插件的源码仓库
+# 真正跑的东西在 D:\Video\Aegisub-3.4.2\：
+#   automation\autoload\zhouxiao.lua   ← 插件本体（src\zhouxiao.lua 是它）
+#   zhouxiao-autotime\                 ← Python 组件（env / models / 卡拉OK模板 / 用户数据）
+
+# 用户数据，不进版本控制
+*.local.json
+ai.json
+ai_history.json
+fxjob.json
+fx_dump.tsv
+fx_ops.tsv
+job.json
+times.tsv
+autotime.log
+lead.txt
+lite2.txt
+ok.txt
+kara_pack/
+catalog/
+__pycache__/
+*.pyc
+*.tmp
