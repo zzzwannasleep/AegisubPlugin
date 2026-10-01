@@ -6,6 +6,8 @@
 
 test_gui.py 不在自动套件里（它要弹真窗口、要人看），单跑：
     python tests\\test_gui.py fx
+test_aegisub_preview.py 也不在（它要复制一份隔离的 Aegisub 开真窗口），单跑：
+    python tests\\test_aegisub_preview.py
 """
 import os
 import subprocess
@@ -15,7 +17,7 @@ import time
 import bootstrap  # noqa: F401
 import testconfig as C  # noqa: E402
 
-SKIP = {"test_gui.py", "run_all.py"}
+SKIP = {"test_gui.py", "test_aegisub_preview.py", "run_all.py"}
 
 
 def main():
